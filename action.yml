@@ -1,0 +1,150 @@
+name: Build Geode mod
+description: Builds a Geode mod
+
+inputs:
+  sdk:
+    description: Which version of the SDK to use. Set to 'given' to use the version specified in mod.json, 'nightly' for latest commit, 'latest' for latest release
+    required: false
+    default: given
+
+  configure-args:
+    description: Extra arguments passed to CMake when configuring.
+    required: false
+    default: ""
+
+  build-args:
+    description: Extra arguments passed to CMake when building.
+    required: false
+    default: ""
+
+  path:
+    description: Path to the project which to build. Defaults to current directory.
+    required: false
+    default: ./
+
+  target:
+    description: One of win, android32, android64, mac, macintel, macm1, ios.
+    required: true
+
+  upload:
+    description: Automatically upload built files as geode-build-(platform).zip
+    default: false
+
+runs:
+  using: composite
+  steps:
+    - name: Detect target
+      id: platform
+      shell: bash
+      run: |
+        TARGET="${{ inputs.target }}"
+        LTO=""
+        if [ "$TARGET" = "android32" ] || [ "$TARGET" = "android64" ]; then
+          PLATFORM="android"
+          BINARIES="$TARGET"
+        elif [ "$TARGET" = "win" ]; then
+          PLATFORM="windows"
+          BINARIES="windows"
+          LTO="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON"
+        elif [ "$TARGET" = "ios" ]; then
+          PLATFORM="ios"
+          BINARIES="ios"
+        elif [ "$TARGET" = "mac" ] || [ "$TARGET" = "macm1" ] || [ "$TARGET" = "macintel" ]; then
+          PLATFORM="macos"
+          BINARIES="macos"
+        else
+          echo "Unknown target $TARGET"
+          exit 1
+        fi
+
+        if [ "${{ inputs.sdk }}" == "nightly" ]; then
+          echo "image=tools:$PLATFORM-latest" >> $GITHUB_OUTPUT
+        elif [ "${{ inputs.sdk }}" == "latest" ]; then
+          echo "Not supported yet sorry"
+          exit 1
+        elif [ "${{ inputs.sdk }}" == "given" ]; then
+          MOD_JSON_PATH=$(find . -name "mod.json" -print | sort -r | head -n 1)
+          TARGET_GEODE_VERSION=$(jq -r '.geode' $MOD_JSON_PATH)
+          echo "Targetting Geode version $TARGET_GEODE_VERSION from $MOD_JSON_PATH"
+          echo "image=geode:$PLATFORM-${TARGET_GEODE_VERSION/#v}" >> $GITHUB_OUTPUT
+        else
+          TARGET_GEODE_VERSION="${{ inputs.sdk }}"
+          echo "image=geode:$PLATFORM-${TARGET_GEODE_VERSION/#v}" >> $GITHUB_OUTPUT
+        fi
+
+        echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
+        echo "binaries=$BINARIES" >> $GITHUB_OUTPUT
+        echo "lto=$LTO" >> $GITHUB_OUTPUT
+        echo "name=$TARGET" >> $GITHUB_OUTPUT
+
+    - name: Setup Cache
+      uses: actions/cache@v6
+      with:
+        path: ~/cache
+        key: build-${{ inputs.target }}-${{ github.sha }}
+        restore-keys: |
+          build-${{ inputs.target }}-
+
+    - name: Prepare image
+      shell: bash
+      run: |
+        mkdir -p ~/cache/cpm ~/cache/scc
+        cd "${{ inputs.path }}"
+        docker run -d \
+          --name builder \
+          -v ./:/src -w /src \
+          -v ~/cache/cpm:/cpm-cache \
+          -v ~/cache/scc:/opt/sccache/cache \
+          "ghcr.io/geode-sdk/${{ steps.platform.outputs.image }}" \
+          sleep infinity
+
+    # temporary while pull-promise is broken
+    - name: fix bindings
+      shell: bash
+      if: ${{ inputs.sdk != 'nightly' }}
+      run: docker exec builder bash -c "cd /bindings && git pull"
+
+    - name: Setup SDK manually
+      shell: bash
+      if: ${{ inputs.sdk == 'nightly' }}
+      run: |
+        docker exec -i builder bash -es <<'EOF'
+        curl -Lf https://raw.githubusercontent.com/geode-sdk/geode-docker/refs/heads/main/docker/CMakePresets.json -o /docker/CMakePresets.json
+        git clone https://github.com/geode-sdk/bindings.git /bindings
+        git clone https://github.com/geode-sdk/geode.git --branch nightly --depth 1 /opt/geode
+        geode config set sdk-nightly true
+        geode sdk install-binaries -p ${{ steps.platform.outputs.binaries }}
+        EOF
+
+    - name: Configure
+      shell: bash
+      run: |
+        LTO="${{ steps.platform.outputs.lto }}"
+        docker exec builder cmake \
+          --preset ${{ inputs.target }}-cache --presets-file /docker/CMakePresets.json \
+          $LTO -DCMAKE_CXX_SCAN_FOR_MODULES=OFF ${{ inputs.configure-args }}
+
+    - name: Build
+      shell: bash
+      run: |
+        docker exec builder cmake --build \
+          --preset ${{ inputs.target }}-cache --presets-file /docker/CMakePresets.json \
+          --parallel ${{ inputs.build-args }}
+
+    # --user id:ig breaks the geode docker image atm, so do this
+    - name: Fix ownership
+      shell: bash
+      if: always()
+      run: sudo chown -R "$(id -u):$(id -g)" "${{ inputs.path }}" ~/cache
+
+    - uses: actions/upload-artifact@v7
+      if: ${{ inputs.upload }}
+      with:
+        name: geode-build-${{ steps.platform.outputs.name }}
+        path: |
+          ${{ inputs.path }}/build-${{ steps.platform.outputs.name }}/*.geode
+          ${{ inputs.path }}/build-${{ steps.platform.outputs.name }}/*.pdb
+          ${{ inputs.path }}/build-${{ steps.platform.outputs.name }}/*.sym
+          ${{ inputs.path }}/build-${{ steps.platform.outputs.name }}/*.dbg
+          ${{ inputs.path }}/build-${{ steps.platform.outputs.name }}/*.dSYM
+        if-no-files-found: error

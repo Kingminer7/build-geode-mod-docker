@@ -1,0 +1,141 @@
+name: Merge .geode files
+description: Merge built mods into a single .geode file
+
+inputs:
+  cli:
+    description: Which CLI version to use, defaults to latest release.
+    required: false
+    default: latest
+  delete-artifacts:
+    description: Whether to delete temporary artifacts left by the build action.
+    required: false
+    default: true
+  zstd:
+    description: Whether to use zstd compression when merging the output .geode files.
+    required: false
+    default: true
+  optimize-pngs:
+    description: Whether to recompress PNGs during merging to reduce file size.
+    required: false
+    default: true
+  upload:
+    description: Upload the artifact
+    default: false
+  upload-zip:
+    description: Forces the uploaded artifact to be a zip even if theres only one .geode file.
+    default: false
+
+outputs:
+  build-output:
+    description: A folder containing the built .geode file(s)
+    value: ${{ steps.merge.outputs.output }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup CLI
+      uses: geode-sdk/cli/.github/actions/setup@v4.0.1
+
+    - uses: actions/download-artifact@v8
+      with:
+        pattern: geode-build-*
+        path: artifacts
+
+    # this is only so we can do llvm-lipo
+    - name: Install LLVM
+      shell: bash
+      run: |
+        sudo apt update
+        sudo apt install -y llvm
+
+    - name: Merge the files
+      shell: bash
+      id: merge
+      run: |
+        cd artifacts
+
+        # add --zstd and --optimize-pngs flags
+        MERGE_FLAGS=""
+        if [ "${{ inputs.zstd }}" = "true" ]; then
+          MERGE_FLAGS="$MERGE_FLAGS --zstd"
+        fi
+        if [ "${{ inputs.optimize-pngs }}" = "true" ]; then
+          MERGE_FLAGS="$MERGE_FLAGS --optimize-pngs"
+        fi
+
+        mkdir out
+
+        # list of all unique mod ids that were built
+        MODS=$(find . -name '*.geode' -type f -printf "%f\n" | sort -u)
+        for mod in $MODS; do
+          echo "Merging $mod"
+          PACKAGE_ARGS=""
+
+          mkdir -p tmp
+          # combine macos dylibs
+          if [ -f "./geode-build-macm1/$mod" ] && [ -f "./geode-build-macintel/$mod" ]; then
+            mkdir -p geode-build-mac
+            mod_name=${mod/%.geode}
+            unzip -j geode-build-macm1/$mod $mod_name.dylib -d tmp
+            mv tmp/$mod_name.dylib tmp/m1.dylib
+            unzip -j geode-build-macintel/$mod $mod_name.dylib -d tmp
+            mv tmp/$mod_name.dylib tmp/intel.dylib
+            llvm-lipo -create ./tmp/m1.dylib ./tmp/intel.dylib -output ./tmp/$mod_name.dylib
+            # replace it with the fat dylib
+            zip geode-build-macm1/$mod tmp/$mod_name.dylib
+            rm geode-build-macintel/$mod
+            mv geode-build-macm1/$mod geode-build-mac/
+          fi
+          rm -rf ./tmp
+
+          for dir in geode-build-*; do
+            if [ -f "./$dir/$mod" ]; then
+              PACKAGE_ARGS="$PACKAGE_ARGS ./$dir/$mod"
+            fi
+          done
+
+          # check for a lone artifact, happens when there's only one platform built
+          if [ -z "$PACKAGE_ARGS" ] && [ -f "./$mod" ]; then
+            PACKAGE_ARGS="./$mod"
+          fi
+
+          ARG_LIST=($PACKAGE_ARGS)
+          # why does it merge into the first one instead of just an output..
+          FIRST="${ARG_LIST[0]}"
+          if [ ${#ARG_LIST[@]} != 1 ]; then
+            geode package merge $MERGE_FLAGS $PACKAGE_ARGS
+          fi
+          cp $FIRST out
+        done
+        # Copy debug files if present
+        find . -type f -name '*.pdb' -exec cp {} out/ \;
+        find . -type f -name '*.sym' -exec cp {} out/ \;
+        find . -type f -name '*.dbg' -exec cp {} out/ \;
+        find . -type d -name '*.dSYM' -exec cp -R {} out/ \;
+        echo "output=$(realpath out)" >> $GITHUB_OUTPUT
+        if [ $(ls -1 out | wc -l) = 1 ]; then
+          echo "archive=false" >> $GITHUB_OUTPUT
+        else
+          echo "archive=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload merged
+      uses: actions/upload-artifact@v7
+      if: ${{ inputs.upload }}
+      with:
+        name: Build Output
+        path: ${{ steps.merge.outputs.output }}
+        archive: ${{ inputs.upload-zip || steps.merge.outputs.archive }}
+
+    - uses: geekyeggo/delete-artifact@v6
+      if: ${{ inputs.delete-artifacts }}
+      with:
+        name: |
+          geode-build-win
+          geode-build-mac
+          geode-build-macm1
+          geode-build-macintel
+          geode-build-ios
+          geode-build-android32
+          geode-build-android64
+        failOnError: false
