@@ -2,8 +2,6 @@
 
 GitHub action to build mods using [geode-docker](https://github.com/geode-sdk/geode-docker) images.
 
-WIP, just for testing
-
 > [!NOTE]
 > To build macOS as split `macm1` and `macintel`, you need to remove `set(CMAKE_OSX_ARCHITECTURES ...)` from your CMakeLists.txt
 
@@ -25,8 +23,11 @@ jobs:
       matrix:
         config:
         - target: win
+        # see note above
         - target: macm1
         - target: macintel
+        # this works too
+        # - target: mac
         - target: ios
         - target: android32
         - target: android64
