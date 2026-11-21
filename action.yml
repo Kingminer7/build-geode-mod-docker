@@ -53,10 +53,10 @@ inputs:
     description: Whether to save actions cache, can be useful to disable on PRs and such.
     default: true
 
-  # use-lto:
-  #   description: Whether to use LTO (Link Time Optimization) via the CMAKE_INTERPROCEDURAL_OPTIMIZATION flag, improving build size. Defaults to true
-  #   required: false
-  #   default: true
+  use-lto:
+    description: Whether to use LTO (Link Time Optimization) via the CMAKE_INTERPROCEDURAL_OPTIMIZATION flag, improving build size. Defaults to true
+    required: false
+    default: true
 
   export-debug:
     description: Whether to export debug files for builds (.pdb for Windows, .dbg for Android, .dSYM for MacOS). Defaults to false
@@ -86,7 +86,6 @@ runs:
       shell: bash
       run: |
         TARGET="${{ inputs.target }}"
-        LTO=""
         BUILD="build-$TARGET"
         if [ "$TARGET" = "android32" ] || [ "$TARGET" = "android64" ]; then
           PLATFORM="android"
@@ -94,7 +93,6 @@ runs:
         elif [ "$TARGET" = "win" ]; then
           PLATFORM="windows"
           BINARIES="windows"
-          LTO="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON"
         elif [ "$TARGET" = "ios" ]; then
           PLATFORM="ios"
           BINARIES="ios"
@@ -106,6 +104,14 @@ runs:
           exit 1
         fi
 
+        LTO=""
+        if [ "${{ inputs.use-lto }}" = "true" ]; then
+          # ios and macos dont have lto just yet
+          if [ "$PLATFORM" = "windows" ] || [ "$PLATFORM" = "android" ]; then
+            LTO="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON"
+          fi
+        fi
+
         PRESET="$TARGET"
         if [ "${{ inputs.build-config }}" = "RelWithDebInfo" ]; then
           PRESET="$PRESET-debug"
@@ -114,8 +120,9 @@ runs:
         if [ "${{ inputs.sdk }}" == "nightly" ]; then
           echo "image=tools:$PLATFORM-latest" >> $GITHUB_OUTPUT
         elif [ "${{ inputs.sdk }}" == "latest" ]; then
-          echo "Not supported yet sorry"
-          exit 1
+          TARGET_GEODE_VERSION=$(curl https://api.geode-sdk.org/v1/loader/versions/latest?prerelease=true | jq -r .payload.version)
+          echo "Targetting Geode version $TARGET_GEODE_VERSION"
+          echo "image=geode:$PLATFORM-${TARGET_GEODE_VERSION/#v}" >> $GITHUB_OUTPUT
         elif [ "${{ inputs.sdk }}" == "given" ]; then
           MOD_JSON_PATH=$(find ${{ inputs.path }} -name "mod.json" -print | sort -r | head -n 1)
           TARGET_GEODE_VERSION=$(jq -r '.geode' $MOD_JSON_PATH)
@@ -123,7 +130,13 @@ runs:
           echo "image=geode:$PLATFORM-${TARGET_GEODE_VERSION/#v}" >> $GITHUB_OUTPUT
         else
           TARGET_GEODE_VERSION="${{ inputs.sdk }}"
+          echo "Targetting Geode version $TARGET_GEODE_VERSION"
           echo "image=geode:$PLATFORM-${TARGET_GEODE_VERSION/#v}" >> $GITHUB_OUTPUT
+        fi
+
+        if [ -z "$TARGET_GEODE_VERSION" ]; then
+          echo "TARGET_GEODE_VERSION is empty, probably failed to find Geode version from a mod.json :("
+          exit 1
         fi
 
         echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
