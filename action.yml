@@ -123,6 +123,8 @@ runs:
         fi
 
         if [ "${{ inputs.sdk }}" == "nightly" ]; then
+          # unused, just so it isnt empty later
+          TARGET_GEODE_VERSION="nightly"
           echo "image=tools:$PLATFORM-latest" >> $GITHUB_OUTPUT
         elif [ "${{ inputs.sdk }}" == "latest" ]; then
           TARGET_GEODE_VERSION=$(curl https://api.geode-sdk.org/v1/loader/versions/latest?prerelease=true | jq -r .payload.version)
