@@ -4,6 +4,9 @@ GitHub action to build mods using [geode-docker](https://github.com/geode-sdk/ge
 
 WIP, just for testing
 
+> [!NOTE]
+> To build macOS as split `macm1` and `macintel`, you need to remove `set(CMAKE_OSX_ARCHITECTURES ...)` from your CMakeLists.txt
+
 ## Example
 
 ```yaml
