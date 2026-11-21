@@ -111,10 +111,7 @@ runs:
 
         LTO=""
         if [ "${{ inputs.use-lto }}" = "true" ]; then
-          # ios and macos dont have lto just yet
-          if [ "$PLATFORM" = "windows" ] || [ "$PLATFORM" = "android" ]; then
-            LTO="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON"
-          fi
+          LTO="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON"
         fi
 
         PRESET="$TARGET"
