@@ -7,6 +7,9 @@ WIP, just for testing
 > [!NOTE]
 > To build macOS as split `macm1` and `macintel`, you need to remove `set(CMAKE_OSX_ARCHITECTURES ...)` from your CMakeLists.txt
 
+> [!NOTE]
+> Missing `cli` version override, but otherwise feature complete with [build-geode-mod](https://github.com/geode-sdk/build-geode-mod)
+
 ## Example
 
 ```yaml
