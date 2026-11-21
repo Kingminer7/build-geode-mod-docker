@@ -46,12 +46,12 @@ runs:
         pattern: geode-build-*
         path: artifacts
 
-    # this is only so we can do llvm-lipo
-    - name: Install LLVM
+    # Install prebuilt static version of lipo for merging macOS binaries
+    - name: Install lipo
       shell: bash
       run: |
-        sudo apt update
-        sudo apt install -y llvm
+        curl -fsSL --retry 3 https://cdn.geode-sdk.org/tools/llvm-lipo-x64 -o "$RUNNER_TEMP/llvm-lipo"
+        sudo install -m 755 "$RUNNER_TEMP/llvm-lipo" /usr/local/bin/llvm-lipo
 
     - name: Merge the files
       shell: bash
