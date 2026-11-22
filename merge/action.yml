@@ -34,6 +34,10 @@ inputs:
     description: Forces the uploaded artifact to be a zip even if theres only one .geode file.
     default: false
 
+  output-name:
+    description: The name for the uploaded zip.
+    default: Build Output
+
 outputs:
   build-output:
     description: A folder containing the built .geode file(s)
@@ -132,7 +136,7 @@ runs:
       uses: actions/upload-artifact@v7
       if: ${{ inputs.upload == 'true' }}
       with:
-        name: Build Output
+        name: ${{ inputs.output-name }}
         path: ${{ steps.merge.outputs.output }}
         archive: ${{ inputs.upload-zip == 'true' || steps.merge.outputs.archive == 'true' }}
 
