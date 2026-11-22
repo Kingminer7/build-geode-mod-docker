@@ -25,6 +25,10 @@ inputs:
   upload:
     description: Upload the artifact
     default: false
+    
+  upload-suffix:
+    description: Suffix appended to the uploaded zip folder. Also needs to be specified in build action.
+    default: ""
 
   upload-zip:
     description: Forces the uploaded artifact to be a zip even if theres only one .geode file.
@@ -43,7 +47,7 @@ runs:
 
     - uses: actions/download-artifact@v8
       with:
-        pattern: geode-build-*
+        pattern: geode-build${{inputs.upload-suffix}}-*
         path: artifacts
 
     # Install prebuilt static version of lipo for merging macOS binaries
@@ -78,22 +82,22 @@ runs:
 
           mkdir -p tmp
           # combine macos dylibs
-          if [ -f "./geode-build-macm1/$mod" ] && [ -f "./geode-build-macintel/$mod" ]; then
-            mkdir -p geode-build-mac
+          if [ -f "./geode-build${{inputs.upload-suffix}}-macm1/$mod" ] && [ -f "./geode-build${{inputs.upload-suffix}}-macintel/$mod" ]; then
+            mkdir -p geode-build${{inputs.upload-suffix}}-mac
             mod_name=${mod/%.geode}
-            unzip -j geode-build-macm1/$mod $mod_name.dylib -d tmp
+            unzip -j geode-build${{inputs.upload-suffix}}-macm1/$mod $mod_name.dylib -d tmp
             mv tmp/$mod_name.dylib tmp/m1.dylib
-            unzip -j geode-build-macintel/$mod $mod_name.dylib -d tmp
+            unzip -j geode-build${{inputs.upload-suffix}}-macintel/$mod $mod_name.dylib -d tmp
             mv tmp/$mod_name.dylib tmp/intel.dylib
             llvm-lipo -create ./tmp/m1.dylib ./tmp/intel.dylib -output ./tmp/$mod_name.dylib
             # replace it with the fat dylib
-            zip -j geode-build-macm1/$mod tmp/$mod_name.dylib
-            rm geode-build-macintel/$mod
-            mv geode-build-macm1/$mod geode-build-mac/
+            zip -j geode-build${{inputs.upload-suffix}}-macm1/$mod tmp/$mod_name.dylib
+            rm geode-build${{inputs.upload-suffix}}-macintel/$mod
+            mv geode-build${{inputs.upload-suffix}}-macm1/$mod geode-build${{inputs.upload-suffix}}-mac/
           fi
           rm -rf ./tmp
 
-          for dir in geode-build-*; do
+          for dir in geode-build${{inputs.upload-suffix}}-*; do
             if [ -f "./$dir/$mod" ]; then
               PACKAGE_ARGS="$PACKAGE_ARGS ./$dir/$mod"
             fi
@@ -136,11 +140,11 @@ runs:
       if: ${{ inputs.delete-artifacts == 'true' }}
       with:
         name: |
-          geode-build-win
-          geode-build-mac
-          geode-build-macm1
-          geode-build-macintel
-          geode-build-ios
-          geode-build-android32
-          geode-build-android64
+          geode-build${{inputs.upload-suffix}}-win
+          geode-build${{inputs.upload-suffix}}-mac
+          geode-build${{inputs.upload-suffix}}-macm1
+          geode-build${{inputs.upload-suffix}}-macintel
+          geode-build${{inputs.upload-suffix}}-ios
+          geode-build${{inputs.upload-suffix}}-android32
+          geode-build${{inputs.upload-suffix}}-android64
         failOnError: false
