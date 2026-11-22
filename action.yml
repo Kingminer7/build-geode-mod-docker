@@ -329,7 +329,7 @@ runs:
     - uses: actions/upload-artifact@v7
       if: ${{ inputs.upload == 'true' }}
       with:
-        name: geode-build-${{ steps.platform.outputs.name }}${{inputs.upload-suffix}}
+        name: geode-build-${{inputs.upload-suffix}}${{ steps.platform.outputs.name }}
         path: |
           /tmp/output/*.geode
           /tmp/output/*.pdb
